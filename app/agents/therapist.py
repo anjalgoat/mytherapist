@@ -20,20 +20,21 @@ class TherapistAgent:
     """Therapeutic response generation agent."""
     
     def __init__(self):
-    try:
-        # Get API key from Streamlit secrets
-        self.api_key = st.secrets["GROQ_API_KEY"]
-        self.model_name = st.secrets.get("MODEL_NAME", "mixtral-8x7b-32768")
+        try:
+            # Get API key from Streamlit secrets
+            self.api_key = st.secrets["GROQ_API_KEY"]
+            self.model_name = st.secrets.get("MODEL_NAME", "mixtral-8x7b-32768")
+            
+            if not self.api_key:
+                raise ValueError("GROQ_API_KEY is missing in Streamlit secrets")
+            
+            # Initialize Groq client
+            self.client = groq.Groq(api_key=self.api_key)
+            logger.info("TherapistAgent initialized with Groq client")
         
-        if not self.api_key:
-            raise ValueError("GROQ_API_KEY is missing in Streamlit secrets")
-
-        # Initialize Groq client
-        self.client = groq.Groq(api_key=self.api_key)
-        logger.info("TherapistAgent initialized with Groq client")
-        
-    except Exception as e:
-        raise ValueError(f"Failed to initialize TherapistAgent: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error initializing TherapistAgent: {e}")
+            raise ValueError(f"Failed to initialize TherapistAgent: {str(e)}")
 
         # Initialize Groq client
         self.client = groq.Groq(api_key=self.api_key)

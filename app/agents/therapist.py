@@ -20,18 +20,20 @@ class TherapistAgent:
     """Therapeutic response generation agent."""
     
     def __init__(self):
-        # Try getting API key from Streamlit secrets first (for cloud)
-        try:
-            self.api_key = st.secrets.get("GROQ_API_KEY")
-            self.model_name = st.secrets.get("MODEL_NAME", "mixtral-8x7b-32768")
-        except:
-            # If not in Streamlit environment, try getting from env file (for local)
-            load_dotenv()
-            self.api_key = os.getenv('GROQ_API_KEY')
-            self.model_name = os.getenv('MODEL_NAME', 'mixtral-8x7b-32768')
+    try:
+        # Get API key from Streamlit secrets
+        self.api_key = st.secrets["GROQ_API_KEY"]
+        self.model_name = st.secrets.get("MODEL_NAME", "mixtral-8x7b-32768")
         
         if not self.api_key:
-            raise ValueError("Groq API key is missing. Please set GROQ_API_KEY in environment or Streamlit secrets.")
+            raise ValueError("GROQ_API_KEY is missing in Streamlit secrets")
+
+        # Initialize Groq client
+        self.client = groq.Groq(api_key=self.api_key)
+        logger.info("TherapistAgent initialized with Groq client")
+        
+    except Exception as e:
+        raise ValueError(f"Failed to initialize TherapistAgent: {str(e)}")
 
         # Initialize Groq client
         self.client = groq.Groq(api_key=self.api_key)

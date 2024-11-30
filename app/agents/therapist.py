@@ -1,9 +1,10 @@
 from typing import Dict, List, Optional
-import httpx
+import groq
 from datetime import datetime
 import logging
 import os
 from dotenv import load_dotenv
+import streamlit as st
 
 from app.models.message import Message
 from app.models.state import (
@@ -13,21 +14,28 @@ from app.models.state import (
     SafetyStatus
 )
 
+logger = logging.getLogger(__name__)
+
 class TherapistAgent:
-    """Therapeutic response generation agent using Groq."""
+    """Therapeutic response generation agent."""
     
     def __init__(self):
-        # Load environment variables
-        load_dotenv()
-        
-        # Set Groq API key from environment
-        self.api_key = os.getenv('GROQ_API_KEY')
+        # Try getting API key from Streamlit secrets first (for cloud)
+        try:
+            self.api_key = st.secrets.get("GROQ_API_KEY")
+            self.model_name = st.secrets.get("MODEL_NAME", "mixtral-8x7b-32768")
+        except:
+            # If not in Streamlit environment, try getting from env file (for local)
+            load_dotenv()
+            self.api_key = os.getenv('GROQ_API_KEY')
+            self.model_name = os.getenv('MODEL_NAME', 'mixtral-8x7b-32768')
         
         if not self.api_key:
-            raise ValueError("Groq API key is missing. Ensure GROQ_API_KEY is set in the .env file.")
+            raise ValueError("Groq API key is missing. Please set GROQ_API_KEY in environment or Streamlit secrets.")
 
-        self.api_base = "https://api.groq.com/openai/v1"  # Updated API base URL
-        logging.info("TherapistAgent initialized with Groq API.")
+        # Initialize Groq client
+        self.client = groq.Groq(api_key=self.api_key)
+        logger.info("TherapistAgent initialized with Groq client")
         
         self.framework_prompts = {
             TherapeuticFramework.CBT: self._get_cbt_prompt,
@@ -56,35 +64,20 @@ class TherapistAgent:
         prompt = self._construct_prompt(context, framework_prompt, state)
         
         try:
-            # Generate response using Groq's API
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.api_base}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": "mixtral-8x7b-32768",  # Groq's Mixtral model
-                        "messages": [
-                            {"role": "system", "content": prompt},
-                            {"role": "user", "content": message.content}
-                        ],
-                        "temperature": 0.7,
-                        "max_tokens": 300
-                    },
-                    timeout=30.0
-                )
-                
-                response.raise_for_status()
-                response_data = response.json()
-                
-                # Add logging for debugging
-                logging.debug(f"Groq API Response: {response_data}")
+            # Generate response using Groq
+            completion = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": message.content}
+                ],
+                temperature=0.7,
+                max_tokens=300
+            )
             
             # Process and enhance the response
             processed_response = self._process_response(
-                response_data['choices'][0]['message']['content'],
+                completion.choices[0].message.content,
                 state
             )
             
@@ -100,9 +93,7 @@ class TherapistAgent:
             )
             
         except Exception as e:
-            # Enhanced error logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Error generating response with Groq: {e}", exc_info=True)
+            logger.error(f"Error generating response: {e}", exc_info=True)
             return self._generate_fallback_response(state)
     
     def _build_context(self, message: Message, state: ConversationState) -> str:
@@ -151,7 +142,7 @@ class TherapistAgent:
             framework_prompt=framework_prompt,
             safety_level=state.safety_status.risk_level
         )
-        
+    
     def _get_cbt_prompt(self, emotional_state: EmotionalState) -> str:
         """Get CBT-specific prompt based on emotional state."""
         return """
@@ -183,7 +174,6 @@ class TherapistAgent:
         3. Maintain genuineness in responses
         4. Reflect feelings and meanings
         5. Support self-discovery and growth
-        Focus on creating a safe, accepting space for exploration.
         """
     
     def _get_mindfulness_prompt(self, emotional_state: EmotionalState) -> str:
@@ -195,7 +185,6 @@ class TherapistAgent:
         3. Promote non-judgmental acceptance
         4. Suggest grounding exercises
         5. Support mindful self-compassion
-        Help user develop awareness without getting caught in thoughts.
         """
     
     def _get_solution_focused_prompt(self, emotional_state: EmotionalState) -> str:
@@ -207,18 +196,16 @@ class TherapistAgent:
         3. Set concrete, achievable goals
         4. Use scaling questions
         5. Identify and build on existing strengths
-        Emphasize positive changes and future-oriented thinking.
         """
-        
+    
     def _process_response(self, response: str, state: ConversationState) -> str:
         """Process and enhance the generated response."""
         # Add safety disclaimers if needed
         if state.safety_status.risk_level > 0.6:
             response += "\n\nPlease remember that I'm an AI assistant. If you're in crisis, " \
                        "please contact emergency services or crisis hotline immediately."
-            
         return response
-        
+    
     def _generate_fallback_response(self, state: ConversationState) -> Message:
         """Generate a safe fallback response."""
         return Message(

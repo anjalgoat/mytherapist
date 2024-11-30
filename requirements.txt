@@ -10,3 +10,4 @@ uuid>=1.30
 aiohttp>=3.8.0
 asyncio>=3.4.3
 textblob>=0.17.1
+groq

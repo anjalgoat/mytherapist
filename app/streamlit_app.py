@@ -4,7 +4,6 @@ import os
 from datetime import datetime
 import uuid
 import logging
-from dotenv import load_dotenv
 
 # Add the project root directory to the Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -19,38 +18,17 @@ logger = logging.getLogger(__name__)
 from app.agents.coordinator import CoordinatorAgent
 from app.models.message import Message
 
-def load_config():
-    """Load configuration from either Streamlit secrets or .env file"""
-    config = {}
-    
-    # First try loading from .env file for local development
-    load_dotenv()
-    config["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY")
-    config["MODEL_NAME"] = os.getenv("MODEL_NAME", "mixtral-8x7b-32768")
-    config["MAX_HISTORY"] = int(os.getenv("MAX_HISTORY", "10"))
-    config["CRISIS_THRESHOLD"] = float(os.getenv("CRISIS_THRESHOLD", "0.7"))
-    
-    # If we're in Streamlit Cloud, override with secrets
-    try:
-        if hasattr(st, 'secrets'):
-            config["GROQ_API_KEY"] = st.secrets.get("GROQ_API_KEY", config["GROQ_API_KEY"])
-            config["MODEL_NAME"] = st.secrets.get("MODEL_NAME", config["MODEL_NAME"])
-            config["MAX_HISTORY"] = int(st.secrets.get("MAX_HISTORY", config["MAX_HISTORY"]))
-            config["CRISIS_THRESHOLD"] = float(st.secrets.get("CRISIS_THRESHOLD", config["CRISIS_THRESHOLD"]))
-    except Exception as e:
-        logger.warning(f"Could not load Streamlit secrets: {e}")
-    
-    if not config["GROQ_API_KEY"]:
-        raise ValueError("GROQ_API_KEY must be set in either .env file or Streamlit secrets")
-        
-    return config
-
 def init_session_state():
     """Initialize session state with better error handling"""
     if 'initialized' not in st.session_state:
         try:
-            # Load configuration
-            st.session_state.config = load_config()
+            # Load configuration from Streamlit secrets
+            st.session_state.config = {
+                "GROQ_API_KEY": st.secrets["GROQ_API_KEY"],
+                "MODEL_NAME": st.secrets.get("MODEL_NAME", "mixtral-8x7b-32768"),
+                "MAX_HISTORY": int(st.secrets.get("MAX_HISTORY", 10)),
+                "CRISIS_THRESHOLD": float(st.secrets.get("CRISIS_THRESHOLD", 0.7))
+            }
             logger.info("Configuration loaded successfully")
             
             # Initialize messages list
@@ -71,6 +49,7 @@ def init_session_state():
             logger.error(f"Initialization error: {e}", exc_info=True)
             st.error("Failed to initialize the application:")
             st.error(str(e))
+            st.error("Please check if all required secrets are set in Streamlit Cloud.")
             return False
     return True
 
@@ -81,14 +60,6 @@ def main():
     # Initialize session state
     if not init_session_state():
         st.stop()
-    
-    # Debug info in sidebar
-    with st.sidebar:
-        if st.checkbox("Show Debug Info"):
-            st.write("Configuration Status:")
-            safe_config = {k: '***' if 'KEY' in k else v 
-                         for k, v in st.session_state.config.items()}
-            st.json(safe_config)
     
     # Display chat messages
     for message in st.session_state.messages:
